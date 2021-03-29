@@ -1,6 +1,12 @@
 # GraphQL official demo
 
-### 遗留问题
+### Development
 
-1.字段默认值
-2. query 是否可以嵌套参数
+> 1. `yarn install`
+> 2. `yarn startx`
+
+### Tech Stack
+
+1. graphql
+2. express
+3. apollo-server-express

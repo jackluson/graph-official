@@ -1,8 +1,12 @@
-const { graphql, buildSchema } = require('graphql');
-const UserDatabase = require('./user-database')
+const { graphql } = require("graphql");
+const { makeExecutableSchema } = require("graphql-tools");
+const express = require("express");
+const { graphqlExpress, graphiqlExpress } = require("apollo-server-express");
+const bodyParser = require("body-parser");
+const UserDatabase = require("./user-database");
 
-const userDatabase = new UserDatabase()
-const schema = buildSchema(`
+const userDatabase = new UserDatabase();
+const typeDefs = `
   type Query {
     hello: String,
     user(id: Int!): User
@@ -18,12 +22,11 @@ const schema = buildSchema(`
   interface Animal {
     id: ID
     login: String
-    resolve: Human
   }
 
   type Human implements Animal {
-    login: String
     id: ID
+    login: String
     lastName: String
   }
 
@@ -34,94 +37,143 @@ const schema = buildSchema(`
     friends(count: Int): [Friend]
   }
 
-  union Unimal =  Human | User
+  union UnionAnimal = Human | User
+
 
   type Mutation {
-    createUser(login: String!): Unimal!
+    createUser(login: String!): UnionAnimal
   }
 
-`);
+`;
 
-const global = {
-  hello: () => 'Hello world!',
-  user: (payload, ...args) => {
-    // variableValues: { first: 3 }
-    console.log('args', args)
-
-    return userDatabase.getOneById(payload.id)
+const resolvers = {
+  Query: {
+    hello: () => "Hello world!",
+    user: (root, payload, ...args) => {
+      // variableValues: { first: 3 }
+      // console.log("args", args);
+      return userDatabase.getOneById(payload.id);
+    },
   },
-  createUser: (payload) => {
-    console.log('payload', payload)
-    return {
-      login: 'jisdf',
-      lastName: 'jisf'
-    }
-  }
-  
-  
-};
-//1.
-// graphql(schema, '{ hello }', global).then((response) => {
-//   console.log(response);
-// });
-// query userFetch($withFriends: Boolean=true, $count: Int=3) {
-//   userOne: user(id: 1) {
-//     ...comparisonFields
-//   }
-//   userTwo: user(id: 2) {
-//     ...comparisonFields 
-//   }
-// }
+  Mutation: {
+    createUser: (payload) => {
+      console.log("payload", payload);
+      return {
+        id: 23,
+        login: "jisdf",
+        lastName: "jisf",
+      };
+    },
+  },
 
-// fragment comparisonFields on User {
-//   id
-//   login
-//   friends (count: $count)@include(if: $withFriends) {
-//     id
-//   }
-// }
-//2.
-const gqlStr =
-  `
-mutation createUserForEpisode($login: String="qq.com") {
-  createUser(login: $login) {
-    login
-    ... on Human {
-      lastName
-    }
-
-  }
-}
-`
-
-const resolverMap = {
   Animal: {
-    __resolveType(obj, context, info){
-      console.log('obj', obj)
-      if(obj.lastName){
-        return 'Human';
+    __resolveType(obj, context, info) {
+      if (obj.id) {
+        return "Animal";
       }
-
-      if(obj.firstName){
-        return 'User';
-      }
-
       return null;
     },
   },
+
+  UnionAnimal: {
+    __resolveType(obj, context, info) {
+      console.log(obj, context);
+      if (obj.lastName) {
+        return "Human";
+      }
+      if (obj.firstName) {
+        return "User";
+      }
+      return null;
+    },
+  },
+  // AnimalResult: {
+  //   __resolveType(...args) {
+  //     console.log("args", args);
+  //     return "Human";
+  //   },
+  // },
 };
 
-graphql(schema, gqlStr, global, this,
+const gqlStr = `
+
+fragment comparisonFields on User {
+  id
+  login
+  friends (count: $count)@include(if: $withFriends) {
+    id
+  }
+}
+
+query userFetch($withFriends: Boolean=true, $count: Int=3) {
+  userOne: user(id: 1) {
+    ...comparisonFields
+  }
+  userTwo: user(id: 2) {
+    ...comparisonFields
+  }
+}
+
+fragment test1 on Animal {
+  id
+  login
+}
+mutation createUserForEpisode($login: String="qq.com") {
+  createUser(login: $login) {
+    ...test1
+    ... on Human {
+      lastName
+    }
+    ... on User {
+      firstName
+    }
+  }
+}
+`;
+
+const schema = makeExecutableSchema({
+  typeDefs,
+  resolvers,
+  // resolverValidationOptions: {
+  //   requireResolversForResolveType: false
+  // }
+});
+
+// console.log("schema-->", schema);
+
+// Initialize the app
+const app = express();
+
+// The GraphQL endpoint
+app.use("/graphql", bodyParser.json(), (...args) => {
+  console.log("🚀 ~ file: index.js ~ line 149 ~ app.use ~ args", args);
+  const fn = graphqlExpress({ schema });
+  return fn(...args);
+});
+
+// GraphiQL, a visual editor for queries
+app.use("/graphiql", graphiqlExpress({ endpointURL: "/graphql" }));
+
+// Start the server
+app.listen(3000, () => {
+  console.log("Go to http://localhost:3000/graphiql to run queries!");
+});
+
+// manual request
+graphql(
+  schema,
+  gqlStr,
+  {},
+  this,
   {
-    // withFriends: true,
-    // count: 4,
-    "login": "JEDI",
+    withFriends: true,
+    count: 4,
+    login: "JEDI",
     // "review": {
     //   "login": "This is a great movie!"
     // }
   },
-  undefined,
-  resolverMap
+  "userFetch"
 ).then((response) => {
-  console.log('response', response);
+  console.log("response", response);
 });
